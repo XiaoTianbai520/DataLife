@@ -1,0 +1,33 @@
+# Maven build output
+/target/
+
+# IDE and editor files
+/.idea/
+*.iml
+/.vscode/
+/.settings/
+/.classpath
+/.project
+/out/
+
+# Local environment and Spring Boot configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# Runtime logs and local SQLite databases
+/logs/
+*.log
+/data/*.db
+/data/*.db-journal
+/data/*.db-wal
+/data/*.db-shm
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

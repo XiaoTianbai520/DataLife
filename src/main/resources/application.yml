@@ -1,0 +1,38 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+
+spring:
+  application:
+    name: digital-life-companion
+  datasource:
+    url: jdbc:sqlite:./data/digital_life.db?journal_mode=WAL&synchronous=NORMAL&foreign_keys=ON
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite 为单文件库，保持单写连接避免 SQLITE_BUSY
+      maximum-pool-size: 1
+      connection-test-query: SELECT 1
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+digitallife:
+  llm:
+    # 本地 LFM3-Omni OpenAI 兼容端点配置
+    base-url: http://192.168.1.102:11434/v1
+    api-key: local-lfm3-omni
+    model-name: lfm3-omni:2b
+    # 只在离线联调环境显式启用模拟模式
+    mock-when-offline: false
+  memory:
+    short-window-turns: 3
+    long-term-top-k: 4
+    embedding-model: qwen3-embedding:0.6b
+  sensor:
+    vision:
+      enabled: true
+      target-width: 1280
+      jpeg-quality: 0.75
+    temperature:
+      enabled: true
