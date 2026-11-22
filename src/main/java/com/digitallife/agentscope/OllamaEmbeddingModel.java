@@ -20,15 +20,18 @@ public class OllamaEmbeddingModel implements EmbeddingModel {
     private final ObjectMapper mapper;
     private final URI endpoint;
     private final String model;
+    private final Duration recallTimeout;
 
     public OllamaEmbeddingModel(
             ObjectMapper mapper,
             @Value("${digitallife.memory.embedding-base-url:${digitallife.llm.base-url}}") String baseUrl,
-            @Value("${digitallife.memory.embedding-model}") String model
+            @Value("${digitallife.memory.embedding-model}") String model,
+            @Value("${digitallife.memory.recall-timeout-seconds:5}") long recallTimeoutSeconds
     ) {
         this.mapper = mapper;
         this.endpoint = URI.create(baseUrl.replaceAll("/+$", "") + "/embeddings");
         this.model = model;
+        this.recallTimeout = Duration.ofSeconds(Math.max(1, recallTimeoutSeconds));
     }
 
     @Override
@@ -38,15 +41,20 @@ public class OllamaEmbeddingModel implements EmbeddingModel {
 
     @Override
     public float[] embedQuery(String text) {
-        return embed("Instruct: Retrieve personal memories relevant to this conversation or observation.\nQuery: " + text);
+        return embed("Instruct: Retrieve personal memories relevant to this conversation or observation.\nQuery: " + text,
+                recallTimeout);
     }
 
     @Override
     public float[] embed(String text) {
+        return embed(text, Duration.ofSeconds(35));
+    }
+
+    private float[] embed(String text, Duration timeout) {
         try {
             String body = mapper.writeValueAsString(Map.of("model", model, "input", text));
             HttpRequest request = HttpRequest.newBuilder(endpoint)
-                    .timeout(Duration.ofSeconds(35))
+                    .timeout(timeout)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();

@@ -71,7 +71,7 @@ public String speak(
 )
 ```
 
-`content` 在保存后经 WebSocket 推送。 `innerThought` 仅写入后端思考日志并供后续推理使用。模型输出缺少有效独白或发言参数时静默降级。工具完成后结束本轮。
+`content` 在保存后经 WebSocket 推送。`innerThought` 经清理后写入后端思考日志，供后续推理和回合进度查看。模型输出缺少有效独白或发言参数时静默降级。工具完成后结束本轮。
 
 ---
 
@@ -100,6 +100,7 @@ public String speak(
 | :--- | :---: | :--- |
 | `/api/v1/chat/send` | `POST` | 主人主动发送消息（高优先级 `Priority=1` 入队并重置心跳计时器） |
 | `/api/v1/chat/history` | `GET` | 以 ID 游标向更早消息翻页，每页按 ID 升序返回 |
+| `/api/v1/chat/turns` | `GET` | 查看当前及最近的回合进度和已完成回合的模型思考 |
 | `/api/v1/config` | `GET` | 获取当前角色人设、心跳频率、视觉分辨率与静音模式配置 |
 | `/api/v1/config` | `PUT` | 热更新角色人设、心跳间隔或免打扰静音模式 |
 | `/api/v1/sensors` | `GET` | 获取所有已注册感官插件列表及当前启停状态 |
@@ -129,7 +130,7 @@ public String speak(
     }
   }
   ```
-> **说明**：`content` 必须为非空字符串。服务端保存完整文本，进入模型的片段遵循当轮 Token 预算。接口持久化消息并入队后返回 `QUEUED`。已排队的心跳会被清除，正在运行的回合执行结束后处理用户消息。回复或轻状态随后通过 WebSocket 推送。
+> **说明**：`content` 必须为非空字符串。服务端保存完整文本，进入模型的片段遵循当轮 Token 预算。接口持久化消息并入队后返回 `QUEUED`。主动消息按消息 ID 顺序串行处理。已排队的心跳会被清除，繁忙时跳过新的心跳，正在执行的回合允许结束。回复或轻状态通过 WebSocket 推送，可按 `messageId` 查询回合进度。
 
 ---
 
@@ -249,6 +250,26 @@ public String speak(
     }
   }
   ```
+
+---
+
+#### 7. 查询回合进度与模型思考
+
+* **请求** `GET /api/v1/chat/turns`，无请求参数。响应携带 `Cache-Control: no-store`。
+* **返回** `data` 为数组，包含当前进程正在处理或排队的回合，以及最近 30 个已结束回合。刷新页面可恢复显示，服务重启后从空的进度快照开始。可见对话历史仍通过 `/api/v1/chat/history` 获取。
+
+| `data[]` 字段 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `turnId` | string | 回合唯一标识 |
+| `triggerType` | string | `USER_MESSAGE` 主动消息，`HEARTBEAT` 定时观察 |
+| `userMessageId` | integer 或 null | 匹配发送回执中的 `messageId`。定时观察为 null |
+| `stage` | string | `QUEUED` 已收到并排队，`PREPARING` 准备上下文，`THINKING` 等待模型，`REPLIED` 已回复，`SILENT` 已完成并保持安静，`NO_REPLY` 回合结束且无可交付输出，`UNAVAILABLE` 模型请求失败，`FAILED` 回合处理失败 |
+| `receivedAt`、`updatedAt` | string | UTC ISO-8601 时间，分别表示触发时间和最近一次阶段更新时间 |
+| `startedAt` | string 或 null | 开始处理的 UTC ISO-8601 时间；排队时为 null |
+| `innerThought` | string 或 null | 模型独白，已滤除记忆提炼标记。已回复和沉默回合可返回，缺少内容时为空字符串 |
+| `reasoning` | string 或 null | 同一响应中模型服务提供的独立推理输出。已回复和沉默回合可返回，未提供时为空字符串 |
+
+思考内容随回合完成后提供。主动推理默认可以等待 120 秒，定时观察默认 30 秒，长期记忆查询默认 5 秒。用 `digitallife.llm.user-turn-timeout-seconds`、`digitallife.llm.heartbeat-timeout-seconds` 和 `digitallife.memory.recall-timeout-seconds` 调整。记忆查询超时后仍继续推理，此轮使用其他已就绪的上下文。
 
 ---
 

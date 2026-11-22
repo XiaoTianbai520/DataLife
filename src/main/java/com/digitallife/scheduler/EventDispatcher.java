@@ -7,10 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.PriorityQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static com.digitallife.scheduler.TurnProgress.Stage.*;
 
 /**
  * 单线程优先级事件分发器（EventDispatcher）：
@@ -21,13 +23,16 @@ public class EventDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(EventDispatcher.class);
 
-    private final PriorityBlockingQueue<TriggerEvent> queue = new PriorityBlockingQueue<>();
+    private final PriorityQueue<TriggerEvent> queue = new PriorityQueue<>();
     private final DigitalLifeAgent agent;
+    private final TurnProgress progress;
     private final ExecutorService singleThreadExecutor;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private boolean processing;
 
-    public EventDispatcher(DigitalLifeAgent agent) {
+    public EventDispatcher(DigitalLifeAgent agent, TurnProgress progress) {
         this.agent = agent;
+        this.progress = progress;
         this.singleThreadExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "digital-life-event-dispatcher");
             t.setDaemon(true);
@@ -43,33 +48,50 @@ public class EventDispatcher {
         }
     }
 
-    public void submit(TriggerEvent event) {
+    public synchronized void submit(TriggerEvent event) {
         if (event.type() == EventType.HEARTBEAT) {
-            // 若队列中已存在尚未消费的心跳事件，则跳过重复堆积
-            boolean alreadyHasHeartbeat = queue.stream().anyMatch(e -> e.type() == EventType.HEARTBEAT);
-            if (alreadyHasHeartbeat) {
-                log.debug("队列中已有待处理 HEARTBEAT 事件，忽略本次重复入队");
+            if (processing || !queue.isEmpty()) {
                 return;
             }
+        } else {
+            discardQueuedHeartbeats();
+            progress.update(event, QUEUED);
         }
         queue.offer(event);
+        notifyAll();
         log.info("事件入队: type={}, priority={}, queueSize={}", event.type(), event.priority(), queue.size());
     }
 
-    public void discardQueuedHeartbeats() {
+    public synchronized void discardQueuedHeartbeats() {
         queue.removeIf(event -> event.type() == EventType.HEARTBEAT);
+    }
+
+    private synchronized TriggerEvent takeNext() throws InterruptedException {
+        while (queue.isEmpty()) {
+            wait();
+        }
+        processing = true;
+        return queue.remove();
     }
 
     private void consumeLoop() {
         while (running.get() && !Thread.currentThread().isInterrupted()) {
+            TriggerEvent event;
             try {
-                TriggerEvent event = queue.take();
-                agent.handleEvent(event);
+                event = takeNext();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
+            }
+            try {
+                agent.handleEvent(event);
             } catch (Exception e) {
-                log.error("EventDispatcher 处理事件异常: {}", e.getMessage(), e);
+                progress.update(event, FAILED);
+                log.error("回合处理异常：turnId={}, type={}", event.turnId(), event.type(), e);
+            } finally {
+                synchronized (this) {
+                    processing = false;
+                }
             }
         }
     }

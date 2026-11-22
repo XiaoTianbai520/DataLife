@@ -42,10 +42,22 @@
     ['FEEL_WARMTH', '<path d="M9 14.5V5a3 3 0 0 1 6 0v9.5a5 5 0 1 1-6 0Z"/><path d="M12 8v9"/><circle cx="12" cy="18" r="1"/>']
   ]);
 
+  const TURN_STAGES = new Map([
+    ['QUEUED', '已收到 · 排队中'],
+    ['PREPARING', '正在准备上下文'],
+    ['THINKING', '模型思考中'],
+    ['REPLIED', '已回复'],
+    ['SILENT', '已完成 · 保持安静'],
+    ['NO_REPLY', '已结束 · 无回复'],
+    ['UNAVAILABLE', '模型未能响应'],
+    ['FAILED', '处理失败']
+  ]);
+  const ACTIVE_TURN_STAGES = new Set(['QUEUED', 'PREPARING', 'THINKING']);
+
   const state = {
     dark: loadSavedTheme(),
     shellMode: Desktop ? 'bubble' : loadSavedShellMode(),
-    activeTab: 'chat', // 'chat' | 'config'
+    activeTab: 'chat',
     mobileSidebarOpen: false,
 
     wsConnected: false,
@@ -55,6 +67,10 @@
     hasMoreHistory: false,
     sendingMessage: null,
     unreadCount: 0,
+    turns: [],
+    userTurns: new Map(),
+    turnsLoaded: false,
+    turnSyncFailed: false,
 
     // Timeline items: { type: 'MESSAGE', id, tempId?, role, content, createdAt, triggerType?, queued?, failed? }
     //               | { type: 'STATUS_ACTION', action, hintText, createdAt }
@@ -83,6 +99,7 @@
   };
 
   let tempSeq = 1;
+  let turnRefresh;
 
   // ==================== 本地偏好 ====================
   function loadSavedTheme() {
@@ -178,35 +195,9 @@
     return null;
   }
 
-  function getMaxPersistedMessageId() {
-    let maxId = 0;
-    for (const item of state.items) {
-      if (item.type === 'MESSAGE' && typeof item.id === 'number' && item.id > maxId) {
-        maxId = item.id;
-      }
-    }
-    return maxId;
-  }
-
   function hasMessageId(id) {
     if (id === null || id === undefined) return false;
     return state.items.some(item => item.type === 'MESSAGE' && item.id === id);
-  }
-
-  function finishMessage(item) {
-    item.queued = false;
-    clearTimeout(item.turnTimeout);
-  }
-
-  function acceptTurnResult(userMessageId) {
-    const hasId = typeof userMessageId === 'number';
-    const item = state.items.find(item => item.queued && (!hasId || item.id === userMessageId));
-    if (item) {
-      finishMessage(item);
-    } else if (state.sendingMessage) {
-      // WebSocket 结果可能先于发送接口的应答到达。
-      state.sendingMessage.earlyResults.add(hasId ? userMessageId : null);
-    }
   }
 
   // ==================== 系统通知 ====================
@@ -324,7 +315,7 @@
     }
 
     // Header title & cadence pill
-    $('headerTitle').textContent = state.activeTab === 'chat' ? '对话陪伴' : '人设与运行配置';
+    $('headerTitle').textContent = { chat: '对话陪伴', thoughts: '思考与进度', config: '人设与运行配置' }[state.activeTab];
     $('headerCadencePill').textContent = muted
       ? '免打扰静音 · 仅响应主动对话'
       : `每 ${state.config.heartbeatIntervalMinutes} 分钟安静观察`;
@@ -478,18 +469,21 @@
     }
 
     if (item.role === 'USER') {
+      const stage = state.userTurns.get(item.id)?.stage;
+      const failed = item.failed || stage === 'FAILED' || stage === 'UNAVAILABLE';
       let stateHint = '';
       if (item.failed) {
         stateHint = '<span>发送失败 ·</span>';
       } else if (item.sending) {
         stateHint = '<span>发送中 ·</span>';
-      } else if (item.queued) {
-        stateHint = '<span>已入队 ·</span>';
+      } else if (stage || item.queued || item.progressExpired) {
+        const label = TURN_STAGES.get(stage) || (item.queued ? TURN_STAGES.get('QUEUED') : '进度记录已失效');
+        stateHint = `<span>${escapeHtml(label)} ·</span>`;
       }
       return `
         <div class="msg-group is-user">
           <div class="msg-bubble">${escapeHtml(item.content)}</div>
-          <div class="msg-meta tabular-nums ${item.failed ? 'is-error' : ''}">
+          <div class="msg-meta tabular-nums ${failed ? 'is-error' : ''}">
             ${stateHint}
             <span>${escapeHtml(timeStr)}</span>
           </div>
@@ -590,9 +584,84 @@
   }
 
   function renderThinking() {
-    const thinking = state.items.some(item => item.queued || item.sending);
-    $('thinkingIndicator').classList.toggle('hidden', !thinking);
-    $('bubbleThinking').classList.toggle('hidden', !thinking);
+    const active = state.turns.find(turn => turn.triggerType === 'USER_MESSAGE'
+      && (turn.stage === 'PREPARING' || turn.stage === 'THINKING'));
+    const queued = state.items.some(item => item.queued) || state.turns.some(turn => turn.stage === 'QUEUED');
+    const label = state.turnSyncFailed && (active || queued) ? '已接收 · 暂时无法获取进度'
+      : active ? `已收到 · ${TURN_STAGES.get(active.stage)}`
+        : queued ? TURN_STAGES.get('QUEUED') : state.sendingMessage ? '正在发送消息' : '';
+    for (const [indicator, text] of [['thinkingIndicator', 'thinkingText'], ['bubbleThinking', 'bubbleThinkingText']]) {
+      const el = $(text);
+      if (el.textContent !== label) el.textContent = label;
+      $(indicator).classList.toggle('hidden', !label);
+    }
+  }
+
+  function renderTurns() {
+    if (state.activeTab !== 'thoughts') return;
+    $('turnConnection').classList.toggle('hidden', !state.turnSyncFailed);
+    const turns = state.turns.filter(turn => ACTIVE_TURN_STAGES.has(turn.stage))
+      .concat(state.turns.filter(turn => !ACTIVE_TURN_STAGES.has(turn.stage)).reverse());
+    $('turnList').innerHTML = turns.length ? turns.map(turn => {
+      const title = turn.userMessageId == null ? '定时观察' : `主动消息 #${turn.userMessageId}`;
+      const active = ACTIVE_TURN_STAGES.has(turn.stage);
+      const body = turn.innerThought || turn.reasoning;
+      const noOutput = ['REPLIED', 'SILENT'].includes(turn.stage);
+      return `
+        <article class="turn-row">
+          <header class="turn-row-header">
+            <h2>${escapeHtml(title)}</h2>
+            <span class="turn-stage${active ? ' is-active' : ''}">${escapeHtml(TURN_STAGES.get(turn.stage) || '')}</span>
+          </header>
+          <div class="turn-meta tabular-nums">
+            <time datetime="${escapeHtml(turn.receivedAt)}">${escapeHtml(formatTimeHHMM(turn.receivedAt))}</time>
+            <span data-turn-received="${escapeHtml(turn.receivedAt)}" data-turn-updated="${active ? '' : escapeHtml(turn.updatedAt)}"></span>
+          </div>
+          ${turn.innerThought ? `<p class="turn-content">${escapeHtml(turn.innerThought)}</p>` : ''}
+          ${turn.reasoning ? `<div class="turn-reasoning"><h3>模型推理输出</h3><p class="turn-content">${escapeHtml(turn.reasoning)}</p></div>` : ''}
+          ${!body && noOutput ? '<p class="turn-note">模型未返回思考内容。</p>' : ''}
+        </article>`;
+    }).join('') : `<p class="turn-empty">${state.turnsLoaded ? '还没有思考记录。发一条消息即可查看本轮进度。' : '正在获取回合进度…'}</p>`;
+    updateTurnClocks();
+  }
+
+  function updateTurnClocks() {
+    if (state.activeTab !== 'thoughts') return;
+    for (const el of $('turnList').querySelectorAll('[data-turn-received]')) {
+      const end = el.dataset.turnUpdated ? Date.parse(el.dataset.turnUpdated) : Date.now();
+      const seconds = Math.max(0, Math.floor((end - Date.parse(el.dataset.turnReceived)) / 1000));
+      const text = `${el.dataset.turnUpdated ? '总计' : '已等待'} ${seconds} 秒`;
+      if (el.textContent !== text) el.textContent = text;
+    }
+  }
+
+  function refreshTurns() {
+    if (turnRefresh) return turnRefresh;
+    // 只用查询开始前已确认的消息判定记录过期，避免旧快照覆盖刚收到的回执。
+    const acknowledged = state.items.filter(item => item.queued);
+    turnRefresh = Api.fetchTurns().then(turns => {
+      const changed = !state.turnsLoaded || state.turnSyncFailed || JSON.stringify(turns) !== JSON.stringify(state.turns);
+      state.turnsLoaded = true;
+      state.turnSyncFailed = false;
+      state.turns = turns;
+      state.userTurns = new Map(turns.filter(turn => turn.userMessageId != null)
+        .map(turn => [turn.userMessageId, turn]));
+      for (const item of acknowledged) {
+        item.queued = false;
+        item.progressExpired = !state.userTurns.has(item.id);
+      }
+      if (changed || acknowledged.length) {
+        renderTurns();
+        renderMessages();
+        if (!state.wsConnected) syncMissedMessagesOnReconnect();
+      }
+    }).catch(() => {
+      if (state.turnSyncFailed) return;
+      state.turnSyncFailed = true;
+      renderTurns();
+      renderThinking();
+    }).finally(() => { turnRefresh = null; });
+    return turnRefresh;
   }
 
   function isConfigDirty() {
@@ -655,9 +724,11 @@
   function renderTabs() {
     const isChat = state.activeTab === 'chat';
     $('tabChat').classList.toggle('hidden', !isChat);
-    $('tabConfig').classList.toggle('hidden', isChat);
+    $('tabThoughts').classList.toggle('hidden', state.activeTab !== 'thoughts');
+    $('tabConfig').classList.toggle('hidden', state.activeTab !== 'config');
     $('navChat').setAttribute('data-active', String(isChat));
-    $('navConfig').setAttribute('data-active', String(!isChat));
+    $('navThoughts').setAttribute('data-active', String(state.activeTab === 'thoughts'));
+    $('navConfig').setAttribute('data-active', String(state.activeTab === 'config'));
     renderStatusAndHeader();
   }
 
@@ -723,17 +794,20 @@
   async function syncMissedMessagesOnReconnect() {
     try {
       const latest = (await Api.fetchChatHistory({ limit: PAGE_SIZE })) || [];
-      const maxId = getMaxPersistedMessageId();
-      const newer = latest.filter(m => m.id > maxId && !hasMessageId(m.id));
+      const earliest = getEarliestPersistedMessageId();
+      const newer = latest.filter(m => !hasMessageId(m.id) && (earliest === null || m.id >= earliest));
       if (newer.length > 0) {
         newer.forEach(m => {
-          state.items.push({
+          const item = {
             type: 'MESSAGE',
             id: m.id,
             role: m.role,
             content: m.content,
             createdAt: m.createdAt
-          });
+          };
+          const next = state.items.findIndex(other => other.type === 'MESSAGE' && other.id > m.id);
+          if (next < 0) state.items.push(item);
+          else state.items.splice(next, 0, item);
         });
         renderMessages({ scrollToBottom: true });
       }
@@ -875,8 +949,7 @@
     };
 
     state.items.push(localMsg);
-    const earlyResults = new Set();
-    state.sendingMessage = { earlyResults };
+    state.sendingMessage = localMsg;
     $('sendBtn').disabled = true;
     $('bubbleSendBtn').disabled = true;
     renderMessages({ scrollToBottom: true });
@@ -888,13 +961,7 @@
         localMsg.id = res.messageId;
         state.items = state.items.filter(item => item === localMsg || item.id !== localMsg.id);
       }
-      if (!earlyResults.has(localMsg.id) && !earlyResults.has(null)) {
-        localMsg.queued = true;
-        localMsg.turnTimeout = setTimeout(() => {
-          finishMessage(localMsg);
-          renderMessages();
-        }, 45000);
-      }
+      localMsg.queued = !state.userTurns.has(localMsg.id);
     } catch (err) {
       localMsg.sending = false;
       localMsg.queued = false;
@@ -905,6 +972,7 @@
       $('sendBtn').disabled = false;
       $('bubbleSendBtn').disabled = false;
       renderMessages({ scrollToBottom: true });
+      if (localMsg.queued) refreshTurns();
     }
   }
 
@@ -919,6 +987,7 @@
           loadSensors();
           loadConfig();
           syncMissedMessagesOnReconnect();
+          refreshTurns();
         }
       },
       onClose() {
@@ -931,9 +1000,7 @@
         const ts = event.timestamp || new Date().toISOString();
 
         if (type === 'SPEAK_MESSAGE') {
-          if (payload.triggerType !== 'HEARTBEAT') {
-            acceptTurnResult(payload.userMessageId);
-          }
+          refreshTurns();
           state.modelAvailable = true;
 
           const messageId = typeof payload.messageId === 'number' ? payload.messageId : null;
@@ -957,7 +1024,7 @@
         }
 
         if (type === 'STATUS_ACTION') {
-          acceptTurnResult(payload.userMessageId);
+          refreshTurns();
           state.items.push({
             type: 'STATUS_ACTION',
             action: payload.action || 'QUIET',
@@ -1009,6 +1076,15 @@
       renderMobileSidebar();
       renderTabs();
       renderMessages({ scrollToBottom: true });
+    });
+
+    $('navThoughts').addEventListener('click', () => {
+      state.activeTab = 'thoughts';
+      state.mobileSidebarOpen = false;
+      renderMobileSidebar();
+      renderTabs();
+      renderTurns();
+      refreshTurns();
     });
 
     $('navConfig').addEventListener('click', () => {
@@ -1166,8 +1242,19 @@
     Promise.all([
       loadInitialHistory(),
       loadConfig(),
-      loadSensors()
+      loadSensors(),
+      refreshTurns()
     ]);
+
+    global.setInterval(() => {
+      updateTurnClocks();
+    }, 1000);
+    global.setInterval(() => {
+      if (state.activeTab === 'thoughts' || state.turnSyncFailed || state.items.some(item => item.queued)
+          || state.turns.some(turn => ACTIVE_TURN_STAGES.has(turn.stage))) {
+        refreshTurns();
+      }
+    }, 2000);
 
     connectWebSocket();
   }

@@ -3,12 +3,16 @@ package com.digitallife.agentscope;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpTransportConfig;
+import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +21,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -32,20 +37,35 @@ public class Lfm3OmniChatModel implements ChatModel {
             .build();
 
     private final OpenAIChatModel model;
+    private final OkHttpTransport transport;
     private final boolean mockWhenOffline;
+    private final Duration userTurnTimeout;
+    private final Duration heartbeatTimeout;
 
     public Lfm3OmniChatModel(
             @Value("${digitallife.llm.base-url}") String baseUrl,
             @Value("${digitallife.llm.api-key}") String apiKey,
             @Value("${digitallife.llm.model-name}") String modelName,
-            @Value("${digitallife.llm.mock-when-offline:false}") boolean mockWhenOffline
+            @Value("${digitallife.llm.mock-when-offline:false}") boolean mockWhenOffline,
+            @Value("${digitallife.llm.user-turn-timeout-seconds:120}") long userTurnTimeoutSeconds,
+            @Value("${digitallife.llm.heartbeat-timeout-seconds:30}") long heartbeatTimeoutSeconds
     ) {
         this.mockWhenOffline = mockWhenOffline;
+        this.userTurnTimeout = Duration.ofSeconds(Math.max(1, userTurnTimeoutSeconds));
+        this.heartbeatTimeout = Duration.ofSeconds(Math.max(1, heartbeatTimeoutSeconds));
+        Duration transportTimeout = this.userTurnTimeout.compareTo(this.heartbeatTimeout) >= 0
+                ? this.userTurnTimeout : this.heartbeatTimeout;
+        this.transport = new OkHttpTransport(HttpTransportConfig.builder()
+                .connectTimeout(Duration.ofSeconds(3))
+                .responseTimeout(transportTimeout)
+                .readTimeout(transportTimeout)
+                .build());
         this.model = OpenAIChatModel.builder()
                 .baseUrl(baseUrl)
                 .endpointPath("/chat/completions")
                 .apiKey(apiKey)
                 .modelName(modelName)
+                .httpTransport(transport)
                 .formatter(new OpenAIChatFormatter())
                 .stream(false)
                 .build();
@@ -55,7 +75,8 @@ public class Lfm3OmniChatModel implements ChatModel {
     public ModelTurnOutput generateSingleStep(List<Msg> messages, List<ToolSchema> tools, boolean isUserTriggered) {
         ChatResponse response;
         try {
-            response = model.stream(messages, tools, OPTIONS).next().block(Duration.ofSeconds(30));
+            Duration timeout = isUserTriggered ? userTurnTimeout : heartbeatTimeout;
+            response = model.stream(messages, tools, OPTIONS).next().block(timeout);
         } catch (RuntimeException failure) {
             log.warn("模型请求失败 ({})", failure.getClass().getSimpleName());
             return mockWhenOffline
@@ -76,14 +97,21 @@ public class Lfm3OmniChatModel implements ChatModel {
                 .map(TextBlock::getText)
                 .collect(Collectors.joining("\n"))
                 .strip();
+        String reasoning = response.getContent().stream()
+                .filter(ThinkingBlock.class::isInstance)
+                .map(ThinkingBlock.class::cast)
+                .map(ThinkingBlock::getThinking)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("\n"))
+                .strip();
         List<ToolUseBlock> calls = response.getContent().stream()
                 .filter(ToolUseBlock.class::isInstance)
                 .map(ToolUseBlock.class::cast)
                 .toList();
         if (calls.isEmpty()) {
-            return thought.isEmpty() || "tool_calls".equals(response.getFinishReason())
+            return (thought.isEmpty() && reasoning.isEmpty()) || "tool_calls".equals(response.getFinishReason())
                     ? invalid(thought)
-                    : new ModelTurnOutput(thought, Optional.empty(), Outcome.COMPLETED);
+                    : new ModelTurnOutput(thought, Optional.empty(), Outcome.COMPLETED, reasoning);
         }
 
         ToolUseBlock call = calls.get(0);
@@ -93,7 +121,7 @@ public class Lfm3OmniChatModel implements ChatModel {
                 || !(input.get("innerThought") instanceof String privateThought) || privateThought.isBlank()) {
             return invalid(thought);
         }
-        return new ModelTurnOutput(privateThought.strip(), Optional.of(call), Outcome.COMPLETED);
+        return new ModelTurnOutput(privateThought.strip(), Optional.of(call), Outcome.COMPLETED, reasoning);
     }
 
     private ModelTurnOutput invalid(String thought) {
@@ -110,5 +138,10 @@ public class Lfm3OmniChatModel implements ChatModel {
                         "{\"content\":\"我在呢，想聊些什么？\",\"innerThought\":\"" + thought + "\"}", Map.of()))
                 : Optional.empty();
         return new ModelTurnOutput(thought, call, Outcome.COMPLETED);
+    }
+
+    @PreDestroy
+    void close() {
+        transport.close();
     }
 }

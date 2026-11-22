@@ -5,8 +5,11 @@ import com.digitallife.memory.HybridMemoryManager;
 import com.digitallife.repository.ChatMessageRepository;
 import com.digitallife.scheduler.HeartbeatScheduler;
 import com.digitallife.scheduler.TriggerEvent;
+import com.digitallife.scheduler.TurnProgress;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,15 +37,18 @@ public class ChatController {
     private final HybridMemoryManager memoryManager;
     private final ChatMessageRepository chatMessageRepository;
     private final HeartbeatScheduler heartbeatScheduler;
+    private final TurnProgress turnProgress;
 
     public ChatController(
             HybridMemoryManager memoryManager,
             ChatMessageRepository chatMessageRepository,
-            HeartbeatScheduler heartbeatScheduler
+            HeartbeatScheduler heartbeatScheduler,
+            TurnProgress turnProgress
     ) {
         this.memoryManager = memoryManager;
         this.chatMessageRepository = chatMessageRepository;
         this.heartbeatScheduler = heartbeatScheduler;
+        this.turnProgress = turnProgress;
     }
 
     /**
@@ -56,7 +62,7 @@ public class ChatController {
         }
         String text = content.textValue().strip();
 
-        // 1. 记录主人可见消息并加入短期窗口
+        // 接收时保存可见历史，轮到该事件后才将它加入模型上下文。
         ChatMessage savedUserMsg = memoryManager.recordVisibleMessage("USER", text, null);
 
         // 2. 重置定时心跳计时器并提交高优先级事件 (Priority=1)
@@ -66,6 +72,12 @@ public class ChatController {
                 "messageId", savedUserMsg.id(),
                 "status", "QUEUED"
         ));
+    }
+
+    /** 查询当前进程的回合进度和模型输出。 */
+    @GetMapping("/turns")
+    public ResponseEntity<ApiResponse<List<TurnProgress.Entry>>> getTurns() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.ok(turnProgress.snapshot()));
     }
 
     /**

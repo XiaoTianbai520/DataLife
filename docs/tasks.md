@@ -115,6 +115,10 @@ java -jar target/digital-life-companion-0.1.0-SNAPSHOT.jar
 
 `mvn -o -B package` 通过 9 项测试。Playwright 实测频率调整、视觉与免打扰开关、气泡对话、三种动作图标，以及 WebSocket 结果早于发送应答的情况。局域网 Ollama 使用合成文本，在免打扰下实测用户问题收到 `SPEAK_MESSAGE`，模型主动沉默时收到 `STATUS_ACTION/QUIET`。
 
+- [x] **Web 思考与进度及慢模型调度**。页面按回合显示收件、排队、上下文准备、回合耗时和模型返回的思考。用户回合默认允许推理 120 秒，准备上下文时的长期记忆召回默认最多等待 5 秒。用户消息串行处理，繁忙时跳过新心跳。
+
+本轮 `mvn -o -B test` 通过 14 项测试。隔离 SQLite、合成模型和 Playwright 覆盖了 62 秒的真实延时、等待期间刷新页面、下一条消息按序使用上一轮问答，以及畸形工具调用结束后无对话或轻状态。局域网 Ollama 另以合成消息验证免打扰时的主动对话和沉默反馈。模型思考在回合完成时显示，进度快照保留在当前服务进程中。
+
 Windows 桌面端依赖 Rust MSVC 工具链、C++ Build Tools、WebView2 和 Node.js。从项目根目录运行以下命令构建桌面 EXE 和 NSIS 安装包。启动桌面端前，按 3.8 启动后端。桌面端通过 `127.0.0.1:8080` 接入同一个后端与 SQLite。退出托盘只关闭桌面前端。
 
 ```powershell

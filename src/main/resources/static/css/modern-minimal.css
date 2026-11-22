@@ -995,6 +995,93 @@ button, input, textarea {
 /* ==========================================================================
    View 2: Config & Sensors (design.md §3 & §4.3)
    ========================================================================== */
+.turn-container {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.turn-description,
+.turn-note,
+.turn-notice,
+.turn-empty {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.turn-list {
+  border-block: 1px solid var(--border);
+}
+
+.turn-row,
+.turn-empty {
+  padding: 16px 0;
+}
+
+.turn-row + .turn-row {
+  border-top: 1px solid var(--border);
+}
+
+.turn-row-header,
+.turn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.turn-row-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.turn-stage,
+.turn-meta {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.turn-stage.is-active {
+  color: var(--foreground);
+}
+
+.turn-meta {
+  margin-top: 4px;
+}
+
+.turn-content {
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.turn-reasoning {
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 12px;
+  margin-top: 12px;
+}
+
+.turn-reasoning h3 {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.turn-reasoning .turn-content {
+  margin-top: 4px;
+}
+
+.turn-note {
+  margin-top: 10px;
+}
+
 .config-view {
   flex: 1;
   min-height: 0;

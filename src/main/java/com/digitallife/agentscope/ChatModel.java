@@ -17,8 +17,13 @@ public interface ChatModel {
     record ModelTurnOutput(
             String innerThought,
             Optional<ToolUseBlock> speakCall,
-            Outcome outcome
-    ) {}
+            Outcome outcome,
+            String reasoning
+    ) {
+        public ModelTurnOutput(String innerThought, Optional<ToolUseBlock> speakCall, Outcome outcome) {
+            this(innerThought, speakCall, outcome, "");
+        }
+    }
 
     /**
      * 执行单次多模态推理。

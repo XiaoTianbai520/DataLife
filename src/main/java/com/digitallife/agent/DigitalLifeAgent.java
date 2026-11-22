@@ -6,6 +6,7 @@ import com.digitallife.memory.HybridMemoryManager;
 import com.digitallife.repository.InnerThoughtLogRepository;
 import com.digitallife.scheduler.EventType;
 import com.digitallife.scheduler.TriggerEvent;
+import com.digitallife.scheduler.TurnProgress;
 import com.digitallife.sensor.SensorySignal;
 import com.digitallife.sensor.SensorySnapshotPool;
 import com.digitallife.websocket.EventPushService;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.digitallife.scheduler.TurnProgress.Stage.*;
 
 @Component
 public class DigitalLifeAgent {
@@ -27,6 +30,7 @@ public class DigitalLifeAgent {
     private final InnerThoughtLogRepository thoughtLogRepository;
     private final SpeakTool speakTool;
     private final EventPushService eventPushService;
+    private final TurnProgress progress;
     private final int longTermTopK;
     private Boolean modelAvailable;
 
@@ -39,6 +43,7 @@ public class DigitalLifeAgent {
             InnerThoughtLogRepository thoughtLogRepository,
             SpeakTool speakTool,
             EventPushService eventPushService,
+            TurnProgress progress,
             @Value("${digitallife.memory.long-term-top-k:4}") int longTermTopK
     ) {
         this.model = model;
@@ -49,10 +54,12 @@ public class DigitalLifeAgent {
         this.thoughtLogRepository = thoughtLogRepository;
         this.speakTool = speakTool;
         this.eventPushService = eventPushService;
+        this.progress = progress;
         this.longTermTopK = longTermTopK;
     }
 
     public TurnResult handleEvent(TriggerEvent event) {
+        progress.update(event, PREPARING);
         boolean userTurn = event.type() == EventType.USER_MESSAGE;
         List<SensorySignal> signals = snapshotPool.captureSnapshot();
         String sensorySummary = snapshotPool.buildTextSummary(signals);
@@ -64,11 +71,13 @@ public class DigitalLifeAgent {
                 event, signals, previous, memories, memoryManager.getShortTermWindow());
         SpeakTool.Turn turn = speakTool.beginTurn(event);
 
+        progress.update(event, THINKING);
         ChatModel.ModelTurnOutput output = model.generateSingleStep(prompt, turn.schemas(), userTurn);
         String rawThought = output.innerThought();
-        String thought = rawThought.lines()
+        String modelThought = rawThought.lines()
                 .filter(line -> !line.stripLeading().startsWith("记忆["))
                 .collect(Collectors.joining("\n")).strip();
+        String thought = modelThought;
         if (thought.isEmpty()) {
             thought = output.outcome() == ChatModel.Outcome.UNAVAILABLE
                     ? previous
@@ -84,6 +93,13 @@ public class DigitalLifeAgent {
         }
         updateModelStatus(output.outcome());
         memoryManager.asyncExtractMemory(event.userInput(), rawThought, thoughtLogId);
+
+        switch (output.outcome()) {
+            case COMPLETED -> progress.update(event, spoken != null ? REPLIED : SILENT,
+                    modelThought, output.reasoning());
+            case INVALID_OUTPUT -> progress.update(event, NO_REPLY);
+            case UNAVAILABLE -> progress.update(event, UNAVAILABLE);
+        }
 
         return new TurnResult(thoughtLogId, thought, spoken != null, spoken == null ? null : spoken.content());
     }

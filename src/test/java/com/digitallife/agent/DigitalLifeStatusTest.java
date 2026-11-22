@@ -4,6 +4,7 @@ import com.digitallife.agentscope.ChatModel;
 import com.digitallife.memory.HybridMemoryManager;
 import com.digitallife.repository.InnerThoughtLogRepository;
 import com.digitallife.scheduler.TriggerEvent;
+import com.digitallife.scheduler.TurnProgress;
 import com.digitallife.sensor.SensorySignal;
 import com.digitallife.sensor.SensorySnapshotPool;
 import com.digitallife.websocket.EventPushService;
@@ -28,7 +29,7 @@ class DigitalLifeStatusTest {
     private final SpeakTool speak = mock(SpeakTool.class);
     private final InnerThoughtLogRepository logs = mock(InnerThoughtLogRepository.class);
     private final DigitalLifeAgent agent = new DigitalLifeAgent(model, snapshot, mock(ContextBuilder.class),
-            mock(HybridMemoryManager.class), mock(InnerThoughtCache.class), logs, speak, events, 4);
+            mock(HybridMemoryManager.class), mock(InnerThoughtCache.class), logs, speak, events, new TurnProgress(), 4);
 
     @Test
     void completedSilentUserTurnsUseAvailableSceneEvidence() {

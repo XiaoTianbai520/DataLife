@@ -67,6 +67,10 @@
     });
   }
 
+  function fetchTurns() {
+    return requestJson('/api/v1/chat/turns', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+  }
+
   function fetchConfig() {
     return requestJson('/api/v1/config', { method: 'GET' });
   }
@@ -171,6 +175,7 @@
     ApiError,
     sendChatMessage,
     fetchChatHistory,
+    fetchTurns,
     fetchConfig,
     updateConfig,
     fetchSensors,
