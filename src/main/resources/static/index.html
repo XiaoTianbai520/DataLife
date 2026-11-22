@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数字生命桌面伴侣</title>
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('dl_theme') === 'light') {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/modern-minimal.css" />
+</head>
+<body>
+
+  <!-- ==================== 形态一：完整桌面窗口模式 ==================== -->
+  <div id="fullShell" class="app-shell">
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <!-- 左侧边栏 (240px) -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top mm-scroll">
+        <!-- 角色状态头 -->
+        <div class="brand-header">
+          <div class="avatar-wrap">
+            <span id="avatarPulse" class="avatar-pulse"></span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/>
+            </svg>
+          </div>
+          <div class="brand-meta">
+            <div class="brand-title">数字生命伴侣</div>
+            <div class="brand-status">
+              <span id="sidebarStatusDot" class="status-dot is-error"></span>
+              <span id="sidebarStatusText" class="tabular-nums">正在连接...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 主导航 -->
+        <div class="sidebar-section">
+          <div class="sidebar-label-row">
+            <span class="sidebar-label">空间</span>
+          </div>
+          <nav class="nav-stack" aria-label="主导航">
+            <button id="navChat" type="button" data-active="true" class="nav-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span>对话陪伴</span>
+              <span id="unreadBadge" class="unread-badge tabular-nums hidden">0</span>
+            </button>
+            <button id="navConfig" type="button" data-active="false" class="nav-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <span>人设与运行配置</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- 快捷感官与隐私开关 -->
+        <div class="sidebar-section">
+          <div class="sidebar-label-row">
+            <span class="sidebar-label">感官与隐私</span>
+            <span class="sidebar-label mono" style="text-transform: none;">/sensors</span>
+          </div>
+          <div id="sidebarSensorList" class="quick-list"></div>
+
+          <div class="sidebar-divider" style="margin: 12px 0;"></div>
+
+          <div class="quick-row">
+            <div class="quick-row-info">
+              <div class="quick-row-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M11 5 6 9H2v6h4l5 4V5Z"/>
+                  <line x1="22" y1="9" x2="16" y2="15"/>
+                  <line x1="16" y1="9" x2="22" y2="15"/>
+                </svg>
+                <span>免打扰静音</span>
+              </div>
+              <div id="sidebarMuteDesc" class="quick-row-sub">允许自主破冰搭话</div>
+            </div>
+            <button id="sidebarMuteSwitch" type="button" role="switch" aria-checked="false" aria-label="免打扰静音模式" class="switch">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 本地隐私声明 -->
+      <div class="sidebar-footer">
+        <svg style="flex-shrink: 0; margin-top: 2px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>本地回环运行，对话与记忆不出本机；视觉画面阅后即焚，绝不留存历史截图。</span>
+      </div>
+    </aside>
+
+    <!-- 右侧主内容区 -->
+    <main class="main-panel">
+      <!-- 顶部导航栏 (52px) -->
+      <header class="top-navbar">
+        <div class="navbar-left">
+          <button id="mobileMenuBtn" type="button" class="btn btn-ghost btn-icon mobile-menu-btn" aria-label="展开侧边栏">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <h1 id="headerTitle" class="navbar-title">对话陪伴</h1>
+          <span id="headerCadencePill" class="pill-badge tabular-nums hide-xs">每 5 分钟安静观察</span>
+        </div>
+
+        <div class="navbar-right">
+          <button id="quickVisionBtn" type="button" class="btn btn-outline hidden" title="一键暂停或恢复桌面视觉感知">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span id="quickVisionText">视觉运行中</span>
+          </button>
+          <button id="toBubbleModeBtn" type="button" class="btn btn-ghost btn-icon" title="切换至极简桌面气泡模式" aria-label="切换至极简桌面气泡模式">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+              <polyline points="4 14 10 14 10 20"/>
+              <polyline points="20 10 14 10 14 4"/>
+              <line x1="14" y1="10" x2="21" y2="3"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
+          <button id="themeToggleBtn" type="button" class="btn btn-ghost btn-icon" title="切换浅色模式" aria-label="切换主题"></button>
+        </div>
+      </header>
+
+      <!-- 系统通知条 -->
+      <div id="systemNoticeBar" class="notice-bar hidden" role="status" aria-live="polite">
+        <div class="notice-left">
+          <span id="systemNoticeCode" class="notice-code mono">INFO</span>
+          <span id="systemNoticeText"></span>
+        </div>
+        <button id="noticeCloseBtn" type="button" class="notice-close">关闭</button>
+      </div>
+
+      <!-- ========== 视图 1：对话陪伴 ========== -->
+      <section id="tabChat" class="chat-view">
+        <div id="chatScroll" class="chat-scroll mm-scroll">
+          <div class="chat-container">
+            <div id="historyLoaderWrap" class="history-loader hidden">
+              <button id="loadMoreBtn" type="button" class="btn btn-outline">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="1 4 1 10 7 10"/>
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                </svg>
+                <span id="loadMoreText">加载更早的对话记录</span>
+              </button>
+            </div>
+
+            <div id="messageList" class="message-list"></div>
+
+            <div id="thinkingIndicator" class="thinking-pill hidden">
+              <span class="thinking-dot"></span>
+              <span>正在结合此刻环境静静思考...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer-area">
+          <div class="composer-inner">
+            <div class="composer-row">
+              <textarea
+                id="chatInput"
+                rows="1"
+                class="composer-input"
+                placeholder="和桌面伙伴说点什么吧（Enter 发送，Shift + Enter 换行）..."
+                aria-label="对话消息输入"
+              ></textarea>
+              <button id="sendBtn" type="button" class="btn btn-primary composer-send-btn">
+                <span>发送</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+            <div class="composer-hint">
+              <span>主人发言按最高优先级响应，并自动重置定时观察倒计时</span>
+              <span class="mono composer-hint-endpoint" style="font-size: 11px;">127.0.0.1:8080</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 视图 2：人设与运行配置 ========== -->
+      <section id="tabConfig" class="config-view mm-scroll hidden">
+        <div class="config-container">
+
+          <!-- 卡片 1：角色人设 -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">角色人设（Persona）</h2>
+                <p class="card-desc">自定义数字生命伴侣的性格、称呼与表达风格，热更新后下一轮思考立即生效。</p>
+              </div>
+              <span class="pill-badge mono" style="font-size: 11px;">personaPrompt</span>
+            </div>
+            <div class="card-body">
+              <div class="preset-row">
+                <span class="field-caption">快捷风格模板：</span>
+                <button type="button" data-persona-preset="warm" class="btn btn-secondary">温和好奇</button>
+                <button type="button" data-persona-preset="tsundere" class="btn btn-secondary">毒舌贴心</button>
+                <button type="button" data-persona-preset="quiet" class="btn btn-secondary">安静陪读</button>
+              </div>
+              <div class="field-group">
+                <label for="cfgPersona" class="field-label">系统人设提示词</label>
+                <textarea id="cfgPersona" rows="5" class="textarea" placeholder="请输入角色人设描述..."></textarea>
+                <div class="field-header">
+                  <span class="field-caption">必须为非空字符串；建议精炼表达，避免过度占用单轮上下文预算</span>
+                  <span id="personaCharCount" class="field-caption tabular-nums">0 字</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡片 2：观察频率、视觉宽度与静音模式 -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">自主观察与运行参数</h2>
+                <p class="card-desc">调整定时心跳观察频率、桌面视觉缩放宽度以及免打扰静音状态。</p>
+              </div>
+              <span class="pill-badge mono" style="font-size: 11px;">/api/v1/config</span>
+            </div>
+            <div class="card-body">
+              <!-- 心跳观察间隔 -->
+              <div class="field-group">
+                <div class="field-header">
+                  <label for="cfgHeartbeatInput" class="field-label">定时自主观察间隔（heartbeatIntervalMinutes）</label>
+                  <div class="stepper-row">
+                    <button id="hbMinusBtn" type="button" class="btn btn-icon-circle" title="减少 1 分钟" aria-label="减少 1 分钟">−</button>
+                    <input id="cfgHeartbeatInput" type="number" min="1" step="1" class="input stepper-input tabular-nums" aria-label="观察间隔分钟数" />
+                    <span class="field-caption">分钟</span>
+                    <button id="hbPlusBtn" type="button" class="btn btn-icon-circle" title="增加 1 分钟" aria-label="增加 1 分钟">+</button>
+                  </div>
+                </div>
+                <div id="heartbeatPresets" class="radio-grid-4">
+                  <button type="button" data-val="3" class="radio-card">
+                    <div class="radio-card-title tabular-nums">3 分钟</div>
+                    <div class="radio-card-sub">高频陪伴</div>
+                  </button>
+                  <button type="button" data-val="5" class="radio-card">
+                    <div class="radio-card-title tabular-nums">5 分钟</div>
+                    <div class="radio-card-sub">均衡推荐</div>
+                  </button>
+                  <button type="button" data-val="10" class="radio-card">
+                    <div class="radio-card-title tabular-nums">10 分钟</div>
+                    <div class="radio-card-sub">低打扰办公</div>
+                  </button>
+                  <button type="button" data-val="20" class="radio-card">
+                    <div class="radio-card-title tabular-nums">20 分钟</div>
+                    <div class="radio-card-sub">极简省电</div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 视觉采样目标宽度 -->
+              <div class="field-group">
+                <div class="field-header">
+                  <label for="cfgVisionWidthInput" class="field-label">视觉等比缩放目标宽度（visionTargetWidth）</label>
+                  <div class="stepper-row">
+                    <input id="cfgVisionWidthInput" type="number" min="1" step="1" class="input stepper-input tabular-nums" style="width: 84px;" aria-label="视觉目标宽度像素" />
+                    <span class="field-caption">px</span>
+                  </div>
+                </div>
+                <div id="visionWidthPresets" class="radio-grid-3">
+                  <button type="button" data-val="720" class="radio-card">
+                    <div class="radio-card-title tabular-nums">720 px</div>
+                    <div class="radio-card-sub">更快推理 · 轻量场景</div>
+                  </button>
+                  <button type="button" data-val="1280" class="radio-card">
+                    <div class="radio-card-top">
+                      <span class="radio-card-title tabular-nums">1280 px</span>
+                      <span class="pill-badge pill-badge-accent">推荐 720p</span>
+                    </div>
+                    <div class="radio-card-sub">清晰辨识代码与窗口</div>
+                  </button>
+                  <button type="button" data-val="1600" class="radio-card">
+                    <div class="radio-card-title tabular-nums">1600 px</div>
+                    <div class="radio-card-sub">高细节 · 耗时稍增</div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 免打扰静音模式 -->
+              <div class="callout-row">
+                <div>
+                  <div class="callout-title">免打扰静音模式（muteMode）</div>
+                  <div class="callout-desc">开启后抑制定时心跳产生的主动搭话气泡，但仍保持后台静默思考并随时回复你的主动聊天。</div>
+                </div>
+                <button id="cfgMuteSwitch" type="button" role="switch" aria-checked="false" aria-label="免打扰静音模式" class="switch">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡片 3：已注册感官插件 -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">感官插件管理（SensorRegistry）</h2>
+                <p class="card-desc">动态启停单个感官采集能力并持久化至本地数据库；未来扩展的新感官插件将自动在此展示。</p>
+              </div>
+              <span class="pill-badge mono" style="font-size: 11px;">/api/v1/sensors</span>
+            </div>
+            <div class="card-body">
+              <div id="configSensorList" class="sensor-list"></div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="config-actions">
+            <span id="dirtyHint" class="dirty-text">正在加载配置...</span>
+            <div class="config-actions-right">
+              <button id="resetConfigBtn" type="button" class="btn btn-outline btn-lg" disabled>重置更改</button>
+              <button id="saveConfigBtn" type="button" class="btn btn-primary btn-lg" disabled>保存配置并热更新</button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== 形态二：极简桌面气泡模式 ==================== -->
+  <div id="bubbleShell" class="bubble-stage hidden">
+    <div class="bubble-guide">
+      <div class="sidebar-label" style="margin-bottom: 4px;">桌面伴随形态</div>
+      <div style="font-size: 14px; font-weight: 600; margin-bottom: 6px; color: var(--foreground);">极简桌面气泡浮窗</div>
+      <p style="font-size: 12px; line-height: 18px; color: var(--muted-foreground);">
+        轻量停靠于角落的低打扰陪伴模式，仅展示近期气泡与轻状态反馈，支持一键隐私暂停与随时展开完整配置窗口。
+      </p>
+      <div style="margin-top: 12px;">
+        <button id="guideToFullBtn" type="button" class="btn btn-outline">返回完整桌面窗口</button>
+      </div>
+    </div>
+
+    <div class="bubble-widget">
+      <div class="bubble-header">
+        <div class="bubble-header-left">
+          <span id="bubbleStatusDot" class="status-dot is-error"></span>
+          <span class="bubble-title">数字生命伴侣</span>
+          <span id="bubbleStateTag" class="pill-badge" style="font-size: 10px;">连接中</span>
+        </div>
+        <div class="bubble-header-actions">
+          <button id="bubbleVisionBtn" type="button" class="btn btn-ghost btn-icon-sm hidden" title="开关桌面视觉感知" aria-label="开关桌面视觉感知">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+          <button id="bubbleMuteBtn" type="button" class="btn btn-ghost btn-icon-sm" title="切换免打扰静音" aria-label="切换免打扰静音">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 5 6 9H2v6h4l5 4V5Z"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          </button>
+          <button id="toFullModeBtn" type="button" class="btn btn-ghost btn-icon-sm" title="展开完整桌面窗口" aria-label="展开完整桌面窗口">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 3 21 3 21 9"/>
+              <polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="bubbleNoticeBar" class="bubble-notice hidden" role="status" aria-live="polite">
+        <span id="bubbleNoticeText" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+        <button id="bubbleNoticeCloseBtn" type="button" class="notice-close">关闭</button>
+      </div>
+
+      <div id="bubbleMessages" class="bubble-messages mm-scroll"></div>
+
+      <div id="bubbleThinking" class="hidden" style="padding: 6px 14px; background: var(--background); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-foreground); display: flex; align-items: center; gap: 6px;">
+        <span class="thinking-dot"></span>
+        <span>正在结合此刻环境静静思考...</span>
+      </div>
+
+      <div class="bubble-footer">
+        <input id="bubbleInput" type="text" class="input bubble-input" placeholder="说点什么..." aria-label="气泡模式消息输入" />
+        <button id="bubbleSendBtn" type="button" class="btn btn-primary" style="height: 34px; padding: 0 12px;">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
