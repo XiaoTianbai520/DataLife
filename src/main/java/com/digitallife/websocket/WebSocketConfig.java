@@ -8,6 +8,8 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
+import java.util.stream.Stream;
+
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer, WebMvcConfigurer {
@@ -18,7 +20,8 @@ public class WebSocketConfig implements WebSocketConfigurer, WebMvcConfigurer {
     public WebSocketConfig(EventPushService eventPushService,
                            @Value("${digitallife.web.allowed-origins:}") String[] allowedOrigins) {
         this.eventPushService = eventPushService;
-        this.allowedOrigins = allowedOrigins;
+        this.allowedOrigins = Stream.concat(Stream.of("http://tauri.localhost"), Stream.of(allowedOrigins))
+                .distinct().toArray(String[]::new);
     }
 
     @Override
@@ -29,9 +32,7 @@ public class WebSocketConfig implements WebSocketConfigurer, WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        if (allowedOrigins.length > 0) {
-            registry.addMapping("/api/v1/**").allowedOrigins(allowedOrigins)
-                    .allowedMethods("GET", "POST", "PUT", "PATCH");
-        }
+        registry.addMapping("/api/v1/**").allowedOrigins(allowedOrigins)
+                .allowedMethods("GET", "POST", "PUT", "PATCH");
     }
 }

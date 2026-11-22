@@ -1,0 +1,20 @@
+{
+  "productName": "数字生命伴侣",
+  "version": "1.1.0",
+  "identifier": "com.digitallife.companion",
+  "build": {
+    "frontendDist": "../src/main/resources/static"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost http://127.0.0.1:8080 ws://127.0.0.1:8080"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"]
+  }
+}

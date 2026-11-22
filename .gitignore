@@ -1,5 +1,7 @@
 # Maven build output
 /target/
+/src-tauri/target/
+/src-tauri/gen/
 
 # IDE and editor files
 /.idea/

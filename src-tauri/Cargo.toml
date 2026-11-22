@@ -1,0 +1,13 @@
+[package]
+name = "digital-life-desktop"
+version = "1.1.0"
+edition = "2021"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.2", features = ["tray-icon"] }

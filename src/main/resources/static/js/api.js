@@ -5,7 +5,8 @@
 (function (global) {
   'use strict';
 
-  const API_BASE = (global.__DIGITALLIFE_API_BASE__ || '').replace(/\/+$/, '');
+  const desktopBase = global.__TAURI__ ? 'http://127.0.0.1:8080' : '';
+  const API_BASE = (global.__DIGITALLIFE_API_BASE__ || desktopBase).replace(/\/+$/, '');
 
   class ApiError extends Error {
     constructor(message, code, status) {

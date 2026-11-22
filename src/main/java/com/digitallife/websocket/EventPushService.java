@@ -10,6 +10,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,19 +47,23 @@ public class EventPushService extends TextWebSocketHandler {
         log.info("桌面前端已断开 WebSocket 连接: sessionId={}, 当前活跃连接数={}", session.getId(), sessions.size());
     }
 
-    public void pushSpeakMessage(Long messageId, String triggerType, String content) {
-        Map<String, Object> payload = Map.of(
+    public void pushSpeakMessage(Long messageId, String triggerType, String content, Long userMessageId) {
+        Map<String, Object> payload = new HashMap<>(Map.of(
                 "messageId", messageId,
                 "triggerType", triggerType,
                 "content", content
-        );
+        ));
+        if (userMessageId != null) {
+            payload.put("userMessageId", userMessageId);
+        }
         broadcast(WsEventMessage.of(EVENT_SPEAK_MESSAGE, payload));
     }
 
-    public void pushStatusAction(String action, String hintText) {
+    public void pushStatusAction(String action, String hintText, Long userMessageId) {
         Map<String, Object> payload = Map.of(
                 "action", action,
-                "hintText", hintText
+                "hintText", hintText,
+                "userMessageId", userMessageId
         );
         broadcast(WsEventMessage.of(EVENT_STATUS_ACTION, payload));
     }

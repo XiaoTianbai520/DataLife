@@ -4,7 +4,7 @@
 > **通信地址**：本地回环 `http://127.0.0.1:8080` / `ws://127.0.0.1:8080/ws/events`  
 > **文档职责**：接口定义、请求响应格式（产品需求见 `PRD.md`，系统架构见 `architecture.md`，数据库设计见 `database.md`，开发任务见 `tasks.md`）
 
-后端绑定回环地址。同源的 REST 与 WebSocket 可直接连接。前端使用其他来源时，通过 `DIGITALLIFE_WEB_ALLOWED_ORIGINS` 配置逗号分隔的允许来源，例如 `http://localhost:5173`。
+后端绑定回环地址。同源 Web 前端和 Windows Tauri 内置前端（`http://tauri.localhost`）可连接 REST 与 WebSocket。通过 `DIGITALLIFE_WEB_ALLOWED_ORIGINS` 可追加逗号分隔的允许来源，例如 `http://localhost:5173`。
 
 ---
 
@@ -194,6 +194,7 @@ public String speak(
   }
   ```
   传至少一个已定义字段。`personaPrompt` 为非空字符串，两个数值字段均为正整数，`muteMode` 为布尔值。所有字段通过校验后一次性保存。
+  提交 `heartbeatIntervalMinutes` 后，心跳从保存时按新周期重新计时。免打扰期间心跳继续观察和记录独白，心跳发言会被抑制，用户主动对话仍可获得发言或轻状态。配置在应用重启后恢复。
 * **响应体（Response Body）**：
   ```json
   {
@@ -269,7 +270,7 @@ public String speak(
 ### 3.2 事件类型与 Payload 格式
 
 #### 事件 1：角色开口发言（`SPEAK_MESSAGE`）
-无论是定时心跳触发（`HEARTBEAT`）还是回复主人消息（`USER_MESSAGE`），只要模型调用了 `speak` 工具即向前端推送：
+成功保存可见发言后推送。免打扰期间，定时心跳（`HEARTBEAT`）的发言被抑制。用户对话（`USER_MESSAGE`）的发言包含 `userMessageId`，对应发送接口返回的用户消息 ID。定时心跳省略该字段。
 
 ```json
 {
@@ -292,10 +293,19 @@ public String speak(
   "timestamp": "2026-11-22T15:06:12+08:00",
   "payload": {
     "action": "GLANCE_SCREEN",
-    "hintText": "安静想了想，暂时没有开口。"
+    "hintText": "悄悄看了一眼屏幕。",
+    "userMessageId": 104
   }
 }
 ```
+
+`userMessageId` 对应发送接口返回的用户消息 ID。动作按下列顺序匹配当轮证据，文案使用固定短句。轻状态仅作实时提示，历史对话接口只返回可见的文本消息。畸形工具调用静默降级，心跳沉默也无轻状态事件。
+
+| `action` | 使用场景 |
+| :--- | :--- |
+| `FEEL_WARMTH` | 体感温度实测偏热，温度感官报告 `noteworthy=true` |
+| `GLANCE_SCREEN` | 当轮成功取得桌面图像 |
+| `QUIET` | 其他情况，包括视觉得不到画面 |
 
 #### 事件 3：系统通知（`SYSTEM_NOTICE`）
 当感官开关变更、免打扰模式切换或本地模型连接状态变化时推送给前端状态栏：

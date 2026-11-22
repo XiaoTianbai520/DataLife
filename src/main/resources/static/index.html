@@ -354,11 +354,11 @@
     </div>
 
     <div class="bubble-widget">
-      <div class="bubble-header">
-        <div class="bubble-header-left">
-          <span id="bubbleStatusDot" class="status-dot is-error"></span>
-          <span class="bubble-title">数字生命伴侣</span>
-          <span id="bubbleStateTag" class="pill-badge" style="font-size: 10px;">连接中</span>
+      <div class="bubble-header" data-tauri-drag-region>
+        <div class="bubble-header-left" data-tauri-drag-region>
+          <span id="bubbleStatusDot" class="status-dot is-error" data-tauri-drag-region></span>
+          <span class="bubble-title" data-tauri-drag-region>数字生命伴侣</span>
+          <span id="bubbleStateTag" class="pill-badge" style="font-size: 10px;" data-tauri-drag-region>连接中</span>
         </div>
         <div class="bubble-header-actions">
           <button id="bubbleVisionBtn" type="button" class="btn btn-ghost btn-icon-sm hidden" title="开关桌面视觉感知" aria-label="开关桌面视觉感知">
@@ -380,6 +380,9 @@
               <line x1="21" y1="3" x2="14" y2="10"/>
               <line x1="3" y1="21" x2="10" y2="14"/>
             </svg>
+          </button>
+          <button id="hideCompanionBtn" type="button" class="btn btn-ghost btn-icon-sm hidden" title="隐藏到系统托盘" aria-label="隐藏到系统托盘">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
           </button>
         </div>
       </div>

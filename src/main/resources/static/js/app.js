@@ -6,6 +6,7 @@
   'use strict';
 
   const Api = global.DigitalLifeApi;
+  const Desktop = global.__TAURI__;
   const PAGE_SIZE = 20;
   const STORAGE_THEME = 'dl_theme';
   const STORAGE_MODE = 'dl_shell_mode';
@@ -35,9 +36,15 @@
     }
   };
 
+  const STATUS_ACTIONS = new Map([
+    ['QUIET', '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/>'],
+    ['GLANCE_SCREEN', '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'],
+    ['FEEL_WARMTH', '<path d="M9 14.5V5a3 3 0 0 1 6 0v9.5a5 5 0 1 1-6 0Z"/><path d="M12 8v9"/><circle cx="12" cy="18" r="1"/>']
+  ]);
+
   const state = {
     dark: loadSavedTheme(),
-    shellMode: loadSavedShellMode(),
+    shellMode: Desktop ? 'bubble' : loadSavedShellMode(),
     activeTab: 'chat', // 'chat' | 'config'
     mobileSidebarOpen: false,
 
@@ -46,8 +53,7 @@
 
     historyLoading: false,
     hasMoreHistory: false,
-    sendingMessage: false,
-    thinking: false,
+    sendingMessage: null,
     unreadCount: 0,
 
     // Timeline items: { type: 'MESSAGE', id, tempId?, role, content, createdAt, triggerType?, queued?, failed? }
@@ -77,7 +83,6 @@
   };
 
   let tempSeq = 1;
-  let thinkingTimeout = null;
 
   // ==================== 本地偏好 ====================
   function loadSavedTheme() {
@@ -188,29 +193,19 @@
     return state.items.some(item => item.type === 'MESSAGE' && item.id === id);
   }
 
-  function clearThinkingState() {
-    state.thinking = false;
-    if (thinkingTimeout) {
-      clearTimeout(thinkingTimeout);
-      thinkingTimeout = null;
-    }
+  function finishMessage(item) {
+    item.queued = false;
+    clearTimeout(item.turnTimeout);
   }
 
-  function startThinkingState() {
-    state.thinking = true;
-    if (thinkingTimeout) clearTimeout(thinkingTimeout);
-    // 兜底：若超过 45 秒既无发言也无静默动作（例如异常降级），自动收起思考提示
-    thinkingTimeout = setTimeout(() => {
-      state.thinking = false;
-      renderThinking();
-    }, 45000);
-  }
-
-  function clearQueuedMarks() {
-    for (const item of state.items) {
-      if (item.type === 'MESSAGE' && item.queued) {
-        item.queued = false;
-      }
+  function acceptTurnResult(userMessageId) {
+    const hasId = typeof userMessageId === 'number';
+    const item = state.items.find(item => item.queued && (!hasId || item.id === userMessageId));
+    if (item) {
+      finishMessage(item);
+    } else if (state.sendingMessage) {
+      // WebSocket 结果可能先于发送接口的应答到达。
+      state.sendingMessage.earlyResults.add(hasId ? userMessageId : null);
     }
   }
 
@@ -255,8 +250,32 @@
 
   function renderShellMode() {
     const isFull = state.shellMode === 'full';
+    document.documentElement.classList.toggle('desktop-bubble', Boolean(Desktop) && !isFull);
     $('fullShell').classList.toggle('hidden', !isFull);
     $('bubbleShell').classList.toggle('hidden', isFull);
+  }
+
+  function updateShellMode(mode) {
+    state.shellMode = mode;
+    renderShellMode();
+    renderMessages({ scrollToBottom: true });
+  }
+
+  async function invokeDesktop(command, args) {
+    try {
+      await Desktop.core.invoke(command, args);
+    } catch (err) {
+      showNotice('DESKTOP_WINDOW_ERROR', `窗口操作失败：${err}`, 'WARN', 4500);
+    }
+  }
+
+  function requestShellMode(mode) {
+    if (Desktop) {
+      invokeDesktop('set_companion_mode', { bubble: mode === 'bubble' });
+    } else {
+      saveShellMode(mode);
+      updateShellMode(mode);
+    }
   }
 
   function renderMobileSidebar() {
@@ -324,6 +343,7 @@
 
     // Sidebar mute switch
     const muteSw = $('sidebarMuteSwitch');
+    muteSw.disabled = state.savingConfig || !state.configLoaded;
     muteSw.setAttribute('aria-checked', String(muted));
     $('sidebarMuteDesc').textContent = muted ? '已抑制心跳主动气泡' : '允许自主破冰搭话';
 
@@ -331,6 +351,7 @@
     const bvBtn = $('bubbleVisionBtn');
     if (vision) {
       bvBtn.classList.remove('hidden');
+      bvBtn.disabled = state.pendingSensors.has('vision');
       bvBtn.style.opacity = visionOn ? '1' : '0.45';
       bvBtn.title = visionOn ? '点击暂停视觉感知' : '点击恢复视觉感知';
     } else {
@@ -338,6 +359,7 @@
     }
 
     const bmBtn = $('bubbleMuteBtn');
+    bmBtn.disabled = state.savingConfig || !state.configLoaded;
     bmBtn.style.color = muted ? 'var(--primary)' : 'var(--foreground)';
     bmBtn.title = muted ? '关闭免打扰静音' : '开启免打扰静音';
 
@@ -443,10 +465,11 @@
     const timeStr = formatTimeHHMM(item.createdAt);
 
     if (item.type === 'STATUS_ACTION') {
+      const icon = STATUS_ACTIONS.get(item.action) ?? STATUS_ACTIONS.get('QUIET');
       return `
         <div class="status-whisper-wrap">
           <div class="status-whisper">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${icon}</svg>
             <span>${escapeHtml(item.hintText)}</span>
             <span class="tabular-nums" style="opacity: 0.72;">· ${escapeHtml(timeStr)}</span>
           </div>
@@ -567,17 +590,25 @@
   }
 
   function renderThinking() {
-    $('thinkingIndicator').classList.toggle('hidden', !state.thinking);
-    $('bubbleThinking').classList.toggle('hidden', !state.thinking);
+    const thinking = state.items.some(item => item.queued || item.sending);
+    $('thinkingIndicator').classList.toggle('hidden', !thinking);
+    $('bubbleThinking').classList.toggle('hidden', !thinking);
   }
 
   function isConfigDirty() {
-    return (
-      state.draftConfig.personaPrompt !== state.config.personaPrompt ||
-      Number(state.draftConfig.heartbeatIntervalMinutes) !== Number(state.config.heartbeatIntervalMinutes) ||
-      Number(state.draftConfig.visionTargetWidth) !== Number(state.config.visionTargetWidth) ||
-      Boolean(state.draftConfig.muteMode) !== Boolean(state.config.muteMode)
-    );
+    return Object.keys(state.config).some(key => state.draftConfig[key] !== state.config[key]);
+  }
+
+  function applyConfig(next, cleanDraft = state.config) {
+    for (const key of Object.keys(next)) {
+      if (!state.configLoaded || state.draftConfig[key] === cleanDraft[key]) {
+        state.draftConfig[key] = next[key];
+      }
+    }
+    state.config = next;
+    state.configLoaded = true;
+    renderStatusAndHeader();
+    renderConfigForm();
   }
 
   function renderConfigForm() {
@@ -636,13 +667,14 @@
     renderMessages();
     try {
       const list = (await Api.fetchChatHistory({ limit: PAGE_SIZE })) || [];
-      state.items = list.map(m => ({
+      const history = list.filter(m => !hasMessageId(m.id)).map(m => ({
         type: 'MESSAGE',
         id: m.id,
         role: m.role,
         content: m.content,
         createdAt: m.createdAt
       }));
+      state.items = [...history, ...state.items];
       state.hasMoreHistory = list.length === PAGE_SIZE;
     } catch (err) {
       showNotice('HISTORY_ERROR', `加载历史对话失败：${err.message}`, 'WARN');
@@ -710,27 +742,16 @@
     }
   }
 
-  async function loadConfig({ preserveDraftIfDirty = false } = {}) {
+  async function loadConfig() {
     try {
       const data = await Api.fetchConfig();
       if (!data) return;
-      const dirtyBefore = state.configLoaded && isConfigDirty();
-      const next = {
+      applyConfig({
         personaPrompt: data.personaPrompt || '',
         heartbeatIntervalMinutes: Number(data.heartbeatIntervalMinutes) || 5,
         visionTargetWidth: Number(data.visionTargetWidth) || 1280,
         muteMode: Boolean(data.muteMode)
-      };
-      state.config = next;
-      state.configLoaded = true;
-      if (!preserveDraftIfDirty || !dirtyBefore) {
-        state.draftConfig = { ...next };
-      } else {
-        // 至少同步静音状态
-        state.draftConfig.muteMode = next.muteMode;
-      }
-      renderStatusAndHeader();
-      renderConfigForm();
+      });
     } catch (err) {
       showNotice('CONFIG_ERROR', `获取运行配置失败：${err.message}`, 'WARN');
     }
@@ -777,29 +798,13 @@
   }
 
   async function handleQuickToggleMute() {
-    const prev = Boolean(state.config.muteMode);
-    const next = !prev;
-
-    state.config.muteMode = next;
-    state.draftConfig.muteMode = next;
-    renderStatusAndHeader();
-    renderConfigForm();
-
-    try {
-      await Api.updateConfig({ muteMode: next });
-    } catch (err) {
-      state.config.muteMode = prev;
-      state.draftConfig.muteMode = prev;
-      showNotice('CONFIG_ERROR', `切换免打扰模式失败：${err.message}`, 'WARN', 5000);
-      renderStatusAndHeader();
-      renderConfigForm();
-    }
+    await saveConfig({ muteMode: !state.config.muteMode }, state.config);
   }
 
   async function handleSaveConfig() {
     const personaPrompt = String(state.draftConfig.personaPrompt || '').trim();
-    const heartbeatIntervalMinutes = parseInt(String(state.draftConfig.heartbeatIntervalMinutes), 10);
-    const visionTargetWidth = parseInt(String(state.draftConfig.visionTargetWidth), 10);
+    const heartbeatIntervalMinutes = Number(state.draftConfig.heartbeatIntervalMinutes);
+    const visionTargetWidth = Number(state.draftConfig.visionTargetWidth);
     const muteMode = Boolean(state.draftConfig.muteMode);
 
     if (!personaPrompt) {
@@ -818,29 +823,28 @@
       return;
     }
 
-    state.savingConfig = true;
-    renderConfigForm();
-
-    try {
-      await Api.updateConfig({
-        personaPrompt,
-        heartbeatIntervalMinutes,
-        visionTargetWidth,
-        muteMode
-      });
-      state.config = {
-        personaPrompt,
-        heartbeatIntervalMinutes,
-        visionTargetWidth,
-        muteMode
-      };
-      state.draftConfig = { ...state.config };
+    const changes = Object.fromEntries(Object.entries({ personaPrompt, heartbeatIntervalMinutes, visionTargetWidth, muteMode })
+      .filter(([key, value]) => value !== state.config[key]));
+    if (await saveConfig(changes, { ...state.draftConfig })) {
       showNotice('CONFIG_UPDATED', '配置已热更新并持久化至本地 SQLite 数据库', 'INFO', 4000);
-      renderStatusAndHeader();
+    }
+  }
+
+  async function saveConfig(changes, cleanDraft) {
+    if (state.savingConfig || !state.configLoaded) return false;
+    state.savingConfig = true;
+    renderStatusAndHeader();
+    renderConfigForm();
+    try {
+      if (Object.keys(changes).length) await Api.updateConfig(changes);
+      applyConfig({ ...state.config, ...changes }, cleanDraft);
+      return true;
     } catch (err) {
       showNotice('CONFIG_ERROR', `保存配置失败：${err.message}`, 'WARN', 6000);
+      return false;
     } finally {
       state.savingConfig = false;
+      renderStatusAndHeader();
       renderConfigForm();
     }
   }
@@ -871,7 +875,8 @@
     };
 
     state.items.push(localMsg);
-    state.sendingMessage = true;
+    const earlyResults = new Set();
+    state.sendingMessage = { earlyResults };
     $('sendBtn').disabled = true;
     $('bubbleSendBtn').disabled = true;
     renderMessages({ scrollToBottom: true });
@@ -879,19 +884,24 @@
     try {
       const res = await Api.sendChatMessage(raw);
       localMsg.sending = false;
-      localMsg.queued = true;
       if (res && typeof res.messageId === 'number') {
         localMsg.id = res.messageId;
+        state.items = state.items.filter(item => item === localMsg || item.id !== localMsg.id);
       }
-      startThinkingState();
+      if (!earlyResults.has(localMsg.id) && !earlyResults.has(null)) {
+        localMsg.queued = true;
+        localMsg.turnTimeout = setTimeout(() => {
+          finishMessage(localMsg);
+          renderMessages();
+        }, 45000);
+      }
     } catch (err) {
       localMsg.sending = false;
       localMsg.queued = false;
       localMsg.failed = true;
-      clearThinkingState();
       showNotice('SEND_ERROR', `发送消息失败：${err.message}`, 'WARN', 5000);
     } finally {
-      state.sendingMessage = false;
+      state.sendingMessage = null;
       $('sendBtn').disabled = false;
       $('bubbleSendBtn').disabled = false;
       renderMessages({ scrollToBottom: true });
@@ -907,7 +917,7 @@
         if (isReconnect) {
           showNotice('WS_RECONNECTED', '已重新连接本地数字生命服务', 'INFO', 3000);
           loadSensors();
-          loadConfig({ preserveDraftIfDirty: true });
+          loadConfig();
           syncMissedMessagesOnReconnect();
         }
       },
@@ -921,8 +931,9 @@
         const ts = event.timestamp || new Date().toISOString();
 
         if (type === 'SPEAK_MESSAGE') {
-          clearThinkingState();
-          clearQueuedMarks();
+          if (payload.triggerType !== 'HEARTBEAT') {
+            acceptTurnResult(payload.userMessageId);
+          }
           state.modelAvailable = true;
 
           const messageId = typeof payload.messageId === 'number' ? payload.messageId : null;
@@ -946,8 +957,7 @@
         }
 
         if (type === 'STATUS_ACTION') {
-          clearThinkingState();
-          clearQueuedMarks();
+          acceptTurnResult(payload.userMessageId);
           state.items.push({
             type: 'STATUS_ACTION',
             action: payload.action || 'QUIET',
@@ -965,8 +975,6 @@
 
           if (code === 'MODEL_UNAVAILABLE') {
             state.modelAvailable = false;
-            clearThinkingState();
-            renderThinking();
             showNotice(code, message || '本地模型当前不可用', 'WARN', 0);
           } else if (code === 'MODEL_AVAILABLE') {
             state.modelAvailable = true;
@@ -976,7 +984,7 @@
             loadSensors();
           } else if (code === 'MUTE_MODE_CHANGED') {
             showNotice(code, message, level, 4500);
-            loadConfig({ preserveDraftIfDirty: true });
+            loadConfig();
           } else {
             showNotice(code, message, level, 5000);
           }
@@ -1029,26 +1037,15 @@
     });
 
     // 窗口形态切换（完整窗口 <-> 极简桌面气泡）
-    $('toBubbleModeBtn').addEventListener('click', () => {
-      state.shellMode = 'bubble';
-      saveShellMode('bubble');
-      renderShellMode();
-      renderMessages({ scrollToBottom: true });
-    });
+    $('toBubbleModeBtn').addEventListener('click', () => requestShellMode('bubble'));
+    $('toFullModeBtn').addEventListener('click', () => requestShellMode('full'));
+    $('guideToFullBtn').addEventListener('click', () => requestShellMode('full'));
 
-    $('toFullModeBtn').addEventListener('click', () => {
-      state.shellMode = 'full';
-      saveShellMode('full');
-      renderShellMode();
-      renderMessages({ scrollToBottom: true });
-    });
-
-    $('guideToFullBtn').addEventListener('click', () => {
-      state.shellMode = 'full';
-      saveShellMode('full');
-      renderShellMode();
-      renderMessages({ scrollToBottom: true });
-    });
+    if (Desktop) {
+      $('hideCompanionBtn').classList.remove('hidden');
+      $('hideCompanionBtn').addEventListener('click', () => invokeDesktop('hide_companion'));
+      Desktop.event.listen('companion-mode-changed', ({ payload }) => updateShellMode(payload ? 'bubble' : 'full'));
+    }
 
     // 顶部快捷视觉按钮 & 气泡快捷按钮
     $('quickVisionBtn').addEventListener('click', () => handleToggleSensor('vision'));
@@ -1122,11 +1119,8 @@
     });
 
     $('cfgHeartbeatInput').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (!Number.isNaN(v)) {
-        state.draftConfig.heartbeatIntervalMinutes = v;
-        renderConfigForm();
-      }
+      state.draftConfig.heartbeatIntervalMinutes = Number(e.target.value);
+      renderConfigForm();
     });
 
     document.querySelectorAll('#heartbeatPresets .radio-card').forEach(btn => {
@@ -1137,11 +1131,8 @@
     });
 
     $('cfgVisionWidthInput').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (!Number.isNaN(v)) {
-        state.draftConfig.visionTargetWidth = v;
-        renderConfigForm();
-      }
+      state.draftConfig.visionTargetWidth = Number(e.target.value);
+      renderConfigForm();
     });
 
     document.querySelectorAll('#visionWidthPresets .radio-card').forEach(btn => {

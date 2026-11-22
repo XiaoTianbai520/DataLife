@@ -1,0 +1,8 @@
+{
+  "identifier": "companion",
+  "windows": ["companion"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:window:allow-start-dragging"
+  ]
+}

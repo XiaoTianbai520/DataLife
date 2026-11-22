@@ -77,7 +77,7 @@ public class SpeakTool {
                 return "MUTED";
             }
             spoken = memoryManager.recordAssistantReply(content.strip(), thoughtLogId);
-            eventPushService.pushSpeakMessage(spoken.id(), event.type().name(), spoken.content());
+            eventPushService.pushSpeakMessage(spoken.id(), event.type().name(), spoken.content(), event.userMessageId());
             return "SPOKEN";
         }
     }

@@ -80,7 +80,7 @@ public class DigitalLifeAgent {
         memoryManager.rememberUserMessage(event.userMessageId());
         ChatMessage spoken = output.speakCall().map(call -> turn.deliver(call, thoughtLogId)).orElse(null);
         if (output.speakCall().isEmpty() && userTurn && output.outcome() == ChatModel.Outcome.COMPLETED) {
-            eventPushService.pushStatusAction("GLANCE_SCREEN", "安静想了想，暂时没有开口。");
+            StatusAction.forSnapshot(signals).push(eventPushService, event.userMessageId());
         }
         updateModelStatus(output.outcome());
         memoryManager.asyncExtractMemory(event.userInput(), rawThought, thoughtLogId);
